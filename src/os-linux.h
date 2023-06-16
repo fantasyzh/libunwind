@@ -62,17 +62,28 @@ unw_ltoa (char *buf, long val)
   return buf + len;
 }
 
+int get_global_proc_map_fd(pid_t pid);
+int is_global_proc_map_fd(int fd);
+
 static inline int
 maps_init (struct map_iterator *mi, pid_t pid)
 {
   char path[sizeof ("/proc/0123456789/maps")], *cp;
 
-  memcpy (path, "/proc/", 6);
-  cp = unw_ltoa (path + 6, pid);
-  assert (cp + 6 < path + sizeof (path));
-  memcpy (cp, "/maps", 6);
+  int global_proc_maps_fd = get_global_proc_map_fd(pid);
+  if (global_proc_maps_fd >= 0)
+  {
+      mi->fd = global_proc_maps_fd;
+  }
+  else
+  {
+      memcpy (path, "/proc/", 6);
+      cp = unw_ltoa (path + 6, pid);
+      assert (cp + 6 < path + sizeof (path));
+      memcpy (cp, "/maps", 6);
 
-  mi->fd = open (path, O_RDONLY);
+      mi->fd = open (path, O_RDONLY);
+  }
   if (mi->fd >= 0)
     {
       /* Try to allocate a page-sized buffer.  */
@@ -232,11 +243,12 @@ maps_next (struct map_iterator *mi,
             memmove (mi->buf_end - mi->buf_size, mi->buf, bytes_left);
 
           mi->buf = mi->buf_end - mi->buf_size;
-          nread = read (mi->fd, mi->buf + bytes_left,
-                        mi->buf_size - bytes_left);
+          nread = pread (mi->fd, mi->buf + bytes_left,
+                        mi->buf_size - bytes_left, mi->offset);
           if (nread <= 0)
             return 0;
-          else if ((size_t) (nread + bytes_left) < mi->buf_size)
+          mi->offset += nread;
+          if ((size_t) (nread + bytes_left) < mi->buf_size)
             {
               /* Move contents to the end of the buffer so we
                  maintain the invariant that all bytes between
@@ -301,7 +313,10 @@ maps_close (struct map_iterator *mi)
 {
   if (mi->fd < 0)
     return;
-  close (mi->fd);
+  if (!is_global_proc_map_fd(mi->fd))
+  {
+      close (mi->fd);
+  }
   mi->fd = -1;
   if (mi->buf)
     {

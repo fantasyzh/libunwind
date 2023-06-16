@@ -33,6 +33,76 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
 #include "libunwind_i.h"
 #include "os-linux.h"
 
+static pid_t global_pid = 0;
+static int global_pid_proc_maps_fd = -1;
+
+void init_global_proc_map(pid_t pid)
+{
+    if (pid > 0)
+    {
+        char path[sizeof ("/proc/0123456789/maps")], *cp;
+        memcpy (path, "/proc/", 6);
+        cp = unw_ltoa (path + 6, pid);
+        assert (cp + 6 < path + sizeof (path));
+        memcpy (cp, "/maps", 6);
+
+        int fd = open (path, O_RDONLY);
+        if (fd >= 0)
+        {
+            /* copy to mem buffer */
+            int memfd = syscall(__NR_memfd_create, "global_pid_proc_maps_fd", (unsigned int)0);
+            if (memfd < 0)
+            {
+                perror("memfd_create");
+                exit(1);
+            }
+            char buffer[4096];
+            int n = -1;
+            while ((n = read(fd, buffer, sizeof(buffer))) > 0)
+            {
+                write(memfd, buffer, n);
+            }
+            if (n < 0)
+            {
+                perror("read proc maps");
+                exit(1);
+            }
+            global_pid_proc_maps_fd = memfd;
+            global_pid = pid;
+        }
+    }
+}
+
+int get_global_proc_map_fd(pid_t pid)
+{
+    if (global_pid <= 0)
+    {
+        return -1;
+    }
+
+    char path[sizeof ("/proc/0123456789/task/0123456789")], *cp;
+    memcpy (path, "/proc/", 6);
+    cp = unw_ltoa (path + 6, global_pid);
+    assert (cp + 6 < path + sizeof (path));
+    memcpy (cp, "/task/", 6);
+    cp = unw_ltoa (cp + 6, pid);
+    (*cp) = '\0';
+
+    if (access(path, F_OK) == 0)
+    {
+        return global_pid_proc_maps_fd;
+    }
+    else
+    {
+        return -1;
+    }
+}
+
+int is_global_proc_map_fd(int fd)
+{
+    return fd == global_pid_proc_maps_fd;
+}
+
 int
 tdep_get_elf_image (struct elf_image *ei, pid_t pid, unw_word_t ip,
                     unsigned long *segbase, unsigned long *mapoff,

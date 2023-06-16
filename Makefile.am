@@ -3,6 +3,7 @@ include_HEADERS = include/libunwind-dynamic.h
 
 if BUILD_PTRACE
 include_HEADERS += include/libunwind-ptrace.h
+include_HEADERS += include/libunwind_global_proc_maps.h
 endif BUILD_PTRACE
 
 if BUILD_COREDUMP
