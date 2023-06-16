@@ -67,6 +67,7 @@ void init_global_proc_map(pid_t pid)
                 perror("read proc maps");
                 exit(1);
             }
+            close(fd);
             global_pid_proc_maps_fd = memfd;
             global_pid = pid;
         }
